@@ -17,6 +17,9 @@ from typing import List, Tuple
 from gtts import gTTS
 import tempfile
 
+# import nest_asyncio
+# nest_asyncio.apply()
+
 # Logging setup
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
