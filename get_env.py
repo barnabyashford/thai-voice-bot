@@ -44,6 +44,11 @@ logger.addHandler(stream_handler)
 #   logger.exception("QDRANT_API_KEY not found in environment variables.")
 
 # try:
+#   QDRANT_BASE = userdata.get("QDRANT_BASE)
+# except Exception as e:
+#   logger.exception("QDRANT_BASE not found in environment variables.")
+
+# try:
 #   TYPHOON_API_KEY = userdata.get("TYPHOON_API_KEY")
 # except Exception as e:
 #   logger.exception("TYPHOON_API_KEY not found in environment variables.")
@@ -65,6 +70,11 @@ try:
   QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 except Exception as e:
   logger.exception("QDRANT_API_KEY not found in environment variables.")
+
+try:
+  QDRANT_BASE = os.getenv("QDRANT_BASE")
+except Exception as e:
+  logger.exception("QDRANT_BASE not found in environment variables.")
 
 try:
   TYPHOON_API_KEY = os.getenv("TYPHOON_API_KEY")
