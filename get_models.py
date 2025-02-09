@@ -44,6 +44,7 @@ def get_typhoon_llm(model_name:str, api_key:str) -> OpenAILike:
   """
 
   try:
+    logger.debug(f"Initialising Typhoon LLM. Model: {model_name}")
     llm = OpenAILike(model=model_name,
                      api_base="https://api.opentyphoon.ai/v1",
                      is_chat_model=True,
@@ -66,6 +67,7 @@ def get_gemini_llm(model_name:str, api_key:str) -> Gemini:
   """
 
   try:
+    logger.debug(f"Initialising Gemini LLM. Model: {model_name}")
     llm = Gemini(model_name=model_name,
                  temperature=0.1,
                  max_tokens=512,
@@ -86,6 +88,7 @@ def get_hf_embedding_model(model_name:str, api_key:str) -> HuggingFaceInferenceA
   """
 
   try:
+    logger.debug(f"Initialising Hugging Face embedding model. Model: {model_name}")
     embed_model = HuggingFaceInferenceAPIEmbedding(model_name=model_name,
                                                    token=api_key
                                                    )
@@ -105,6 +108,7 @@ def get_gemini_embedding_model(model_name:str, api_key:str) -> GeminiEmbedding:
   """
 
   try:
+    logger.debug(f"Initialising Gemini embedding model. Model: {model_name}")
     embed_model = GeminiEmbedding(model_name=model_name,
                                   api_key=api_key
                                   )
@@ -125,9 +129,15 @@ def recognise_speech(audio_path:str, api_endpoint:str, hf_token:str) -> str:
     str - The transcribed text.
   """
 
+  logger.debug(f"Transcribing audio input.")
   with open(audio_path, "rb") as audio:
+    logger.debug(f"Reading audio file....")
     bin = audio.read()
+  logger.debug(f"Requesting from API endpoint...")
   response = requests.post(api_endpoint, headers={"Authorization": f"Bearer {hf_token}"}, data=bin)
   result = response.json()
 
-  return result.get('text', 'Could not transcribe audio')
+  try:
+    return result.get('text')
+  except Exception as e:
+    logger.exception('Could not transcribe audio.')
