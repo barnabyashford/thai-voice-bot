@@ -44,7 +44,7 @@ logger.addHandler(stream_handler)
 #   logger.exception("QDRANT_API_KEY not found in environment variables.")
 
 # try:
-#   QDRANT_BASE = userdata.get("QDRANT_BASE)
+#   QDRANT_BASE = userdata.get("QDRANT_BASE")
 # except Exception as e:
 #   logger.exception("QDRANT_BASE not found in environment variables.")
 
