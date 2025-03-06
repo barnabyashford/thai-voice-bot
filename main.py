@@ -1,243 +1,405 @@
-# User Interface
-import gradio as gr
+from dotenv import load_dotenv
+load_dotenv()
 
-# Text-to-Speech
-from gtts import gTTS
-
-# RAG framework
-from llama_index.core import (PromptTemplate, Settings, SimpleDirectoryReader, StorageContext, SummaryIndex, VectorStoreIndex)
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
-from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core.llms import (ChatMessage, MessageRole)
-from llama_index.core.query_engine.router_query_engine import RouterQueryEngine
-from llama_index.core.selectors import LLMSingleSelector
-from llama_index.core.tools import QueryEngineTool
-
-import logging
-from typing import List, Tuple
-import tempfile
 import os
-import requests
+import queue
+import re
+import sys
+import time
 
-from get_models import get_typhoon_llm, get_gemini_llm, get_hf_embedding_model, get_gemini_embedding_model, recognise_speech
-from get_env import GOOGLE_API_KEY, HF_TOKEN, QDRANT_API_KEY, QDRANT_BASE, TYPHOON_API_KEY
+from google.cloud import speech
+from google import genai
+import pyaudio
 
-# Logging setup
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# Audio recording parameters
+STREAMING_LIMIT = 240000  # 4 minutes
+SAMPLE_RATE = 16000
+CHUNK_SIZE = int(SAMPLE_RATE / 10)  # 100ms
 
-file_handler = logging.FileHandler('rag.log')
-file_handler.setLevel(logging.DEBUG)
-file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s : %(message)s')
-file_handler.setFormatter(file_formatter)
+RED = "\033[0;31m"
+GREEN = "\033[0;32m"
+YELLOW = "\033[0;33m"
+BLUE = "\033[0;36m"
 
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
-stream_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s : %(message)s')
-stream_handler.setFormatter(stream_formatter)
 
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
+def get_current_time() -> int:
+    """Return Current Time in MS.
 
-# Initialize settings and clients
-Settings.llm = get_gemini_llm(model_name="models/gemini-1.5-flash-8b", api_key=GOOGLE_API_KEY)
-Settings.embed_model = get_gemini_embedding_model(model_name="models/text-embedding-004", api_key=GOOGLE_API_KEY)
-qdrant_client = QdrantClient(url=QDRANT_BASE, api_key=QDRANT_API_KEY)
+    Returns:
+        int: Current Time in MS.
+    """
 
-# Setup temp directory and logging
-TEMP_DIR = "temp_audio"
-os.makedirs(TEMP_DIR, exist_ok=True)
+    return int(round(time.time() * 1000))
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
-def text_to_speech(text: str) -> str:
+class ResumableMicrophoneStream:
+    """Opens a recording stream as a generator yielding the audio chunks."""
+
+    def __init__(
+        self: object,
+        rate: int,
+        chunk_size: int,
+    ) -> None:
+        """Creates a resumable microphone stream.
+
+        Args:
+        self: The class instance.
+        rate: The audio file's sampling rate.
+        chunk_size: The audio file's chunk size.
+
+        returns: None
+        """
+        self._rate = rate
+        self.chunk_size = chunk_size
+        self._num_channels = 1
+        self._buff = queue.Queue()
+        self.closed = True
+        self.start_time = get_current_time()
+        self.restart_counter = 0
+        self.audio_input = []
+        self.last_audio_input = []
+        self.result_end_time = 0
+        self.is_final_end_time = 0
+        self.final_request_end_time = 0
+        self.bridging_offset = 0
+        self.last_transcript_was_final = False
+        self.new_stream = True
+        self._audio_interface = pyaudio.PyAudio()
+        self._audio_stream = self._audio_interface.open(
+            format=pyaudio.paInt16,
+            channels=self._num_channels,
+            rate=self._rate,
+            input=True,
+            frames_per_buffer=self.chunk_size,
+            # Run the audio stream asynchronously to fill the buffer object.
+            # This is necessary so that the input device's buffer doesn't
+            # overflow while the calling thread makes network requests, etc.
+            stream_callback=self._fill_buffer,
+        )
+
+    def __enter__(self: object) -> object:
+        """Opens the stream.
+
+        Args:
+        self: The class instance.
+
+        returns: None
+        """
+        self.closed = False
+        return self
+
+    def __exit__(
+        self: object,
+        type: object,
+        value: object,
+        traceback: object,
+    ) -> object:
+        """Closes the stream and releases resources.
+
+        Args:
+        self: The class instance.
+        type: The exception type.
+        value: The exception value.
+        traceback: The exception traceback.
+
+        returns: None
+        """
+        self._audio_stream.stop_stream()
+        self._audio_stream.close()
+        self.closed = True
+        # Signal the generator to terminate so that the client's
+        # streaming_recognize method will not block the process termination.
+        self._buff.put(None)
+        self._audio_interface.terminate()
+
+    def _fill_buffer(
+        self: object,
+        in_data: object,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        """Continuously collect data from the audio stream, into the buffer.
+
+        Args:
+        self: The class instance.
+        in_data: The audio data as a bytes object.
+        args: Additional arguments.
+        kwargs: Additional arguments.
+
+        returns: None
+        """
+        self._buff.put(in_data)
+        return None, pyaudio.paContinue
+
+    def generator(self: object) -> object:
+        """Stream Audio from microphone to API and to local buffer
+
+        Args:
+            self: The class instance.
+
+        returns:
+            The data from the audio stream.
+        """
+        while not self.closed:
+            data = []
+
+            if self.new_stream and self.last_audio_input:
+                chunk_time = STREAMING_LIMIT / len(self.last_audio_input)
+
+                if chunk_time != 0:
+                    if self.bridging_offset < 0:
+                        self.bridging_offset = 0
+
+                    if self.bridging_offset > self.final_request_end_time:
+                        self.bridging_offset = self.final_request_end_time
+
+                    chunks_from_ms = round(
+                        (self.final_request_end_time - self.bridging_offset)
+                        / chunk_time
+                    )
+
+                    self.bridging_offset = round(
+                        (len(self.last_audio_input) - chunks_from_ms) * chunk_time
+                    )
+
+                    for i in range(chunks_from_ms, len(self.last_audio_input)):
+                        data.append(self.last_audio_input[i])
+
+                self.new_stream = False
+
+            # Use a blocking get() to ensure there's at least one chunk of
+            # data, and stop iteration if the chunk is None, indicating the
+            # end of the audio stream.
+            chunk = self._buff.get()
+            self.audio_input.append(chunk)
+
+            if chunk is None:
+                return
+            data.append(chunk)
+            # Now consume whatever other data's still buffered.
+            while True:
+                try:
+                    chunk = self._buff.get(block=False)
+
+                    if chunk is None:
+                        return
+                    data.append(chunk)
+                    self.audio_input.append(chunk)
+
+                except queue.Empty:
+                    break
+
+            yield b"".join(data)
+
+def setup_gemini_api():
+    """Set up the Gemini API with the API key.
+    
+    Returns:
+        Optional[genai.GenerativeModel]: The Gemini model or None if setup fails.
+    """
+    api_key = os.environ.get("GOOGLE_API_KEY", None)
+    
+    if not api_key:
+        sys.stdout.write(YELLOW)
+        sys.stdout.write(f"GOOGLE_API_KEY environment variable not set.\n")
+        api_key = input("Please enter your Gemini API key: ").strip()
+        if not api_key:
+            sys.stdout.write(RED)
+            sys.stdout.write(f"No API key provided. Voice response functionality will be disabled.\n")
+            return None
+        
+    # genai.configure(api_key=api_key)
+    
+    client = genai.Client(api_key=api_key)
+
     try:
-        audio_path = os.path.join(TEMP_DIR, f'response_{len(os.listdir(TEMP_DIR))}.mp3')
-        tts = gTTS(text=text, lang='th')
-        tts.save(audio_path)
-        return audio_path
+        # Initialize the Gemini model
+        model = client.chats.create(model="gemini-2.0-flash")
+        return model
     except Exception as e:
-        logger.error(f"Error in text-to-speech: {e}")
+        sys.stdout.write(RED)
+        sys.stdout.write(f"Error setting up Gemini API: {e}\n")
         return None
 
-def transcribe_audio(audio_path: str) -> str:
-    API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+
+def get_ai_response(model, transcript: str) -> str:
+    """Get a response from the AI model based on the user's transcript.
     
-    with open(audio_path, "rb") as f:
-        data = f.read()
-    response = requests.post(API_URL, headers=headers, data=data)
+    Args:
+        model: The Gemini model.
+        transcript: The user's speech transcript.
+        
+    Returns:
+        str: The AI's response.
+    """
+    if not model:
+        return "AI response functionality is disabled. Please set up your Gemini API key."
     
     try:
-        return response.json()["text"]
+        # Generate a response from the AI model
+        # response = model.send_message(transcript)
+        response = model.send_message_stream(transcript)
+        return response
     except Exception as e:
-        logger.error(f"Error in transcription: {e}")
-        return "Transcription failed."
+        return f"Error generating response: {e}"
 
-def index_documents(document_path: str) -> Tuple[VectorStoreIndex, SummaryIndex]:
+def listen_print_loop(responses: object, stream: object, gemini) -> None:
+    """Iterates through server responses and prints them.
 
-  splitter = SentenceSplitter(chunk_size=1024)
+    The responses passed is a generator that will block until a response
+    is provided by the server.
 
-  qdrant_store = QdrantVectorStore(client=qdrant_client, collection_name=os.path.basename(document_path))
-  storage_context = StorageContext.from_defaults(vector_store=qdrant_store)
+    Each response may contain multiple results, and each result may contain
+    multiple alternatives; for details, see https://goo.gl/tjCPAU.  Here we
+    print only the transcription for the top alternative of the top result.
 
-  documents = SimpleDirectoryReader(input_files=[document_path]).load_data()
-  nodes = splitter.get_nodes_from_documents(documents)
+    In this case, responses are provided for interim results as well. If the
+    response is an interim one, print a line feed at the end of it, to allow
+    the next result to overwrite it, until the response is a final one. For the
+    final one, print a newline to preserve the finalized transcription.
 
-  vector_index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
-  summary_index = SummaryIndex(nodes)
+    Arg:
+        responses: The responses returned from the API.
+        stream: The audio stream to be processed.
+    """
+    for response in responses:
+        if get_current_time() - stream.start_time > STREAMING_LIMIT:
+            stream.start_time = get_current_time()
+            break
 
-  vector_query_engine = vector_index.as_query_engine()
-  summary_query_engine = summary_index.as_query_engine(response_mode="tree_summarize",use_async=True)
+        if not response.results:
+            continue
 
-  vector_tool = QueryEngineTool.from_defaults(
-    query_engine=vector_query_engine,
-    description=(
-      f"ใช้สำหรับตอบคำถามเกี่ยวกับไฟล์ {os.path.basename(document_path)}"
-    ),
-  )
+        result = response.results[0]
 
-  summary_tool = QueryEngineTool.from_defaults(
-    query_engine=summary_query_engine,
-    description=(
-      f"ใช้สำหรับการตอบคำถามที่จำเป็นต้องใช้เนื้อหาทั้งหมดของไฟล์ {os.path.basename(document_path)}"
-    ),
-  )
+        if not result.alternatives:
+            continue
 
-  return vector_tool, summary_tool
+        transcript = result.alternatives[0].transcript
 
-class RAGEngine:
+        result_seconds = 0
+        result_micros = 0
 
-  def __init__(self, llm=None, embed_model=None, vector_db_client=None, document_path:str=None):
-    
-    self.doc_to_tools = dict()
-    self.all_tools = list()
-    self.llm = Settings.llm if not llm else llm
-    self.embed_model = Settings.embed_model if not embed_model else embed_model
-    self.client = vector_db_client
-    self.query_engine = None
+        if result.result_end_time.seconds:
+            result_seconds = result.result_end_time.seconds
 
-    if document_path and os.path.exists(document_path):
+        if result.result_end_time.microseconds:
+            result_micros = result.result_end_time.microseconds
 
-      if os.path.isdir(document_path) and os.listdir(document_path) > 0:
+        stream.result_end_time = int((result_seconds * 1000) + (result_micros / 1000))
 
-        for document in os.listdir(document_path):
-          full_path = os.path.join(document_path, document)
-          vector_tool, summary_tool = index_documents(full_path)
-          self.all_tools.append(vector_tool)
-          self.all_tools.append(summary_tool)
-          self.doc_to_tools[document] = {"vector_tool": vector_tool, "summary_tool": summary_tool}
+        corrected_time = (
+            stream.result_end_time
+            - stream.bridging_offset
+            + (STREAMING_LIMIT * stream.restart_counter)
+        )
+        # Display interim results, but with a carriage return at the end of the
+        # line, so subsequent lines will overwrite them.
 
-      elif os.path.isfile(document_path):
-        vector_tool, summary_tool = index_documents(document_path)
-        self.all_tools.append(vector_tool)
-        self.all_tools.append(summary_tool)
-        self.doc_to_tools[os.path.basename(document_path)] = {"vector_tool": vector_tool, "summary_tool": summary_tool}
+        if result.is_final:
+            sys.stdout.write(GREEN)
+            sys.stdout.write("\033[K")
+            sys.stdout.write("USER " + str(corrected_time) + ": " + transcript + "\n")
 
-      self.query_engine = RouterQueryEngine(
-        selector=LLMSingleSelector.from_defaults(),
-        query_engine_tools=self.all_tools,
-        verbose=True
-      ) 
-    
-  def query(self, query: str, history:List[Tuple[str, str]]=None):
-    if self.query_engine:
-      return self.query_engine.query(query)
-    else:
-      messages = []
-      
-      if history and len(history) != 0:
-        
-        for user, bot in history:
-          messages.append(ChatMessage(role=MessageRole.USER, content=user))
-          messages.append(ChatMessage(role=MessageRole.ASSISTANT, content=bot))
-        
-      messages.append(ChatMessage(role=MessageRole.USER, content=query))
-        
-      return self.llm.chat(messages=messages).message.content
-  
-  def add_document(self, document_path:str):
+            stream.is_final_end_time = stream.result_end_time
+            stream.last_transcript_was_final = True
 
-    if os.path.isdir(document_path) and os.listdir(document_path) > 0:
+            # Exit recognition if any of the transcribed phrases could be
+            # one of our keywords.
+            if re.search(r"\b(exit|quit|หยุดการทำงาน)\b", transcript, re.I):
+                sys.stdout.write(YELLOW)
+                sys.stdout.write("Exiting...\n")
+                stream.closed = True
+                break
+            
 
-      for document in os.listdir(document_path):
-        full_path = os.path.join(document_path, document)
-        vector_tool, summary_tool = index_documents(full_path)
-        self.all_tools.append(vector_tool)
-        self.all_tools.append(summary_tool)
-        self.doc_to_tools[document] = {"vector_tool": vector_tool, "summary_tool": summary_tool}
+            # Get a response from the AI model based on the user's transcript
+            sys.stdout.write(YELLOW)
+            sys.stdout.write("Thinking....\r")
+            start_thinking_time = get_current_time()
+            ai_response = get_ai_response(gemini, transcript)
+            stop_thinking_time = get_current_time()
+            sys.stdout.write(BLUE)
+            sys.stdout.write("\033[K")
+            sys.stdout.write(f"Assistant : ")
+            for stream_chunk in ai_response:
+                sys.stdout.write(stream_chunk.text)
 
-    elif os.path.isfile(document_path):
-      vector_tool, summary_tool = index_documents(document_path)
-      self.all_tools.append(vector_tool)
-      self.all_tools.append(summary_tool)
-      self.doc_to_tools[os.path.basename(document_path)] = {"vector_tool": vector_tool, "summary_tool": summary_tool}
+        else:
+            sys.stdout.write(RED)
+            sys.stdout.write("\033[K")
+            sys.stdout.write("USER " + str(corrected_time) + ": " + transcript + "\r")
 
-    self.query_engine = RouterQueryEngine(
-      selector=LLMSingleSelector.from_defaults(),
-      query_engine_tools=self.all_tools,
-      verbose=True
+            stream.last_transcript_was_final = False
+
+
+def main() -> None:
+    """start bidirectional streaming from microphone input to speech API"""
+    client = speech.SpeechClient()
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=SAMPLE_RATE,
+        language_code="th-TH",
+        max_alternatives=1,
     )
 
-class RAGChatbot:
-    def __init__(self):
-        self.rag_engine = RAGEngine(vector_db_client=qdrant_client)
-        self.chat_history: List[Tuple[str, str]] = []
-        
-    def add_document(self, file_path: str):
-        self.rag_engine.add_document(file_path)
-        
-    def process_message(self, message: str) -> Tuple[List[Tuple[str, str]], str]:
-        response = self.rag_engine.query(message, self.chat_history)
-        response_text = str(response.response) if hasattr(response, 'response') else str(response)
-        self.chat_history.append((message, response_text))
-        audio_path = text_to_speech(response_text)
-        return self.chat_history, audio_path
-        
-    def process_audio(self, audio_path: str) -> Tuple[List[Tuple[str, str]], str]:
-        if not audio_path:
-            return self.chat_history, None
-        transcribed_text = transcribe_audio(audio_path)
-        return self.process_message(transcribed_text)
-        
-    def clear_history(self):
-        self.chat_history = []
-        return [], None
+    streaming_config = speech.StreamingRecognitionConfig(
+        config=config, interim_results=True
+    )
 
-def main():
-    bot = RAGChatbot()
+    mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
+    print(mic_manager.chunk_size)
+    sys.stdout.write(BLUE)
+    sys.stdout.write("\n" + "="*50 + "\n")
+    sys.stdout.write("Voice Bot Application\n")
+    sys.stdout.write("=====================================================\n")
     
-    with gr.Blocks(theme=gr.themes.Soft()) as interface:
-        gr.Markdown("# RAG-powered Voice Chatbot with Document Upload")
-        
-        with gr.Row():
-            file_upload = gr.File(label="Upload Document")
-        
-        chatbot = gr.Chatbot()
-        with gr.Row():
-            with gr.Column(scale=6):
-                message = gr.Textbox(placeholder="Type your message here...")
-            with gr.Column(scale=1):
-                audio_input = gr.Audio(sources="microphone", type="filepath", label="🎤 Voice Input")
-        
-        with gr.Row():
-            clear = gr.Button("Clear History")
-            audio_output = gr.Audio(label="🔊 Bot Response", type="filepath")
-            
-        def handle_file_upload(file):
-            if file:
-                bot.add_document(file.name)
-                return f"Document {os.path.basename(file.name)} uploaded and indexed successfully!"
-            return "No file uploaded."
-            
-        file_upload.upload(handle_file_upload, file_upload, gr.Textbox())
-        message.submit(bot.process_message, [message], [chatbot, audio_output])
-        audio_input.change(bot.process_audio, [audio_input], [chatbot, audio_output])
-        clear.click(bot.clear_history, None, [chatbot, audio_output])
+    user_choice = input("Start voice conversation? (y/n): ").lower()
+    
+    if user_choice not in ('y', 'yes'):
+        sys.stdout.write(YELLOW)
+        sys.stdout.write("Exiting Voice Bot. Goodbye!\n")
+        return
+    
+    sys.stdout.write(YELLOW)
+    sys.stdout.write('\nListening... (Say "exit" or "หยุดการทำงาน" to end the conversation)\n\n')
+    sys.stdout.write("ROLE :            Transcript Results/Status\n")
+    sys.stdout.write("=====================================================\n")
 
-    interface.launch(debug=True)
+    llm = setup_gemini_api()
+
+    with mic_manager as stream:
+        while not stream.closed:
+            sys.stdout.write(YELLOW)
+            sys.stdout.write(
+                "\n" + str(STREAMING_LIMIT * stream.restart_counter) + ": NEW REQUEST\n"
+            )
+
+            stream.audio_input = []
+            audio_generator = stream.generator()
+
+            requests = (
+                speech.StreamingRecognizeRequest(audio_content=content)
+                for content in audio_generator
+            )
+
+            responses = client.streaming_recognize(streaming_config, requests)
+
+            # Now, put the transcription responses to use.
+            listen_print_loop(responses, stream, llm)
+
+            if stream.result_end_time > 0:
+                stream.final_request_end_time = stream.is_final_end_time
+            stream.result_end_time = 0
+            stream.last_audio_input = []
+            stream.last_audio_input = stream.audio_input
+            stream.audio_input = []
+            stream.restart_counter = stream.restart_counter + 1
+
+            if not stream.last_transcript_was_final:
+                sys.stdout.write("\n")
+            stream.new_stream = True
+
 
 if __name__ == "__main__":
     main()

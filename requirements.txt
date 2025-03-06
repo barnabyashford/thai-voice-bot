@@ -1,9 +1,4 @@
-llama-index
-llama-index-embeddings-huggingface
-llama-index-llms-gemini
-llama-index-llms-huggingface
-llama-index-llms-openai-like
-llama-index-vector-stores-qdrant
-pythainlp
-python-dotenv
-qdrant-client
+google-cloud-speech
+dotenv
+pyaudio
+google-genai
