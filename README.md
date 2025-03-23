@@ -1,10 +1,11 @@
-A repository for....
-# 2209492 Project in Language Technology II
+> A repository for....
+
+# Thai voice-based chatbot: a semester-long senior project
 
 a senior project course for LangTech major student at the Faculty of Arts, Chulalongkorn University. (Specifically, me.)
 
 ```
-----------------------------------------------------UNDER CONSTRUCTION----------------------------------------------------
+----------------------------------------------------STILL UNDER CONSTRUCTION----------------------------------------------------
 ```
 
 ```
