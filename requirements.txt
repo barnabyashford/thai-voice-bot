@@ -1,3 +1,5 @@
+# Python 3.12.6
+attacut==1.0.6
 dotenv==0.9.9
 google-cloud-speech==2.31.0
 google-genai==1.4.0
