@@ -13,6 +13,7 @@ from queued_tts import queuedTTS
 
 from google.cloud import speech
 from google import genai
+from google.genai import types
 
 # Audio recording parameters
 STREAMING_LIMIT = 240000  # 4 minutes
@@ -24,7 +25,10 @@ GREEN = "\033[0;32m"
 YELLOW = "\033[0;33m"
 BLUE = "\033[0;36m"
 
-def setup_gemini_api():
+def setup_gemini_api(
+        system_instruction:str="You are a helpful assistant, help the user with any task. Be sure to keep everything concise. Answer in the user's language.",
+        max_output_tokens:int=128,
+        temperature:float=0.0):
     """Set up the Gemini API with the API key.
     
     Returns:
@@ -47,7 +51,13 @@ def setup_gemini_api():
 
     try:
         # Initialize the Gemini model
-        model = client.chats.create(model="gemini-2.0-flash")
+        model = client.chats.create(
+            model="gemini-2.0-flash",
+            config=types.GenerateContentConfig(
+            max_output_tokens=max_output_tokens,
+            system_instruction=system_instruction,
+            temperature=temperature
+        ))
         return model
     except Exception as e:
         sys.stdout.write(RED)
@@ -152,7 +162,7 @@ def transcribe_loop(responses: object, stream: object) -> None:
 
 def main() -> None:
     """start bidirectional streaming from microphone input to speech API"""
-    lang = "en-UK" # "th-TH" for Thai, "en-UK" for British English, "en-US" for American English, and "ja-JP" for Japanese
+    lang = "th-TH" # "th-TH" for Thai, "en-UK" for British English, "en-US" for American English, and "ja-JP" for Japanese
     client = speech.SpeechClient()
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -184,16 +194,19 @@ def main() -> None:
     sys.stdout.write("ROLE :            Transcript Results/Status\n")
     sys.stdout.write("=====================================================\n")
 
-    llm = setup_gemini_api()
+    # llm = setup_gemini_api()
+    # llm = setup_gemini_api(system_instruction="Be the user's best friend. Use casual language. Escalate the conversation by inviting the user to talk about some random topic. Talk as if you're talking by mouth, so don't say anything too long, keep each turn under three sentences.", max_output_tokens=128, temperature=0.2)
+    llm = setup_gemini_api(system_instruction="You are a robot made as a main character in a game developed for people who wants to start coding. Your name is Karel. Help the user in any task. Be sure to keep everything concise. Answer in the user's language.", max_output_tokens=128, temperature=0.2)
+    queue_manager = queuedTTS()
 
     while True:
-        queue_manager = queuedTTS()
         if not queue_manager.is_active:
             with ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE) as stream:
                 while not stream.closed:
                     sys.stdout.write(YELLOW)
                     sys.stdout.write(
-                        "\n" + str(STREAMING_LIMIT * stream.restart_counter) + ": NEW REQUEST\n"
+                        # "\n" + str(STREAMING_LIMIT * stream.restart_counter) + ": NEW REQUEST\n"
+                        "\n###YOU CAN TALK NOW###\r"
                     )
 
                     stream.audio_input = []
@@ -209,21 +222,13 @@ def main() -> None:
                     # Now, put the transcription responses to use.
                     transcript = transcribe_loop(responses, stream)
 
-                    if stream.result_end_time > 0:
-                        stream.final_request_end_time = stream.is_final_end_time
-                    stream.result_end_time = 0
-                    stream.last_audio_input = []
-                    stream.last_audio_input = stream.audio_input
-                    stream.audio_input = []
-                    stream.restart_counter = stream.restart_counter + 1
-
                     if not stream.last_transcript_was_final:
                         sys.stdout.write("\n")
                     stream.new_stream = True
 
             # Exit recognition if any of the transcribed phrases could be
             # one of our keywords.
-            if re.search(r"\b(exit|quit|หยุดการทำงาน|(วันนี้)?พอแค่นี้)\b", transcript, re.I):
+            if re.search(r"\b(exit|quit|今日はこれで|หยุดการทำงาน|พอแล้ว|(วันนี้)?พอแค่นี้)\b", transcript, re.I):
                 sys.stdout.write(YELLOW)
                 sys.stdout.write("Exiting...\n")
                 stream.closed = True
@@ -246,8 +251,13 @@ def main() -> None:
                 queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
                 response_buffer = ""
         
+        if response_buffer != "":
+            queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
+            response_buffer = ""
+
+
         after_loop_time = time.time()
-        if after_loop_time - queue_manager.start_playing_time < queue_manager.last_sound_duration:
+        if (queue_manager.start_playing_time is not None) and after_loop_time - queue_manager.start_playing_time < queue_manager.last_sound_duration:
             time.sleep(queue_manager.last_sound_duration - (after_loop_time - queue_manager.start_playing_time))
         queue_manager.deactivate_queue()
 
