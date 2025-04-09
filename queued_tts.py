@@ -1,9 +1,7 @@
-import attacut
 from gtts import gTTS
 from mutagen.mp3 import MP3
 import os
 from playsound import playsound
-from pythainlp.tokenize import word_tokenize
 from pythainlp.util import normalize
 import queue
 import shutil
@@ -61,7 +59,7 @@ class queuedTTS:
 
       while self.queue.qsize() > 0:
 
-        self.is_playing = (self.start_playing_time is not None) and (time.time() - self.start_playing_time < self.last_sound_duration)
+        self.is_playing = (self.start_playing_time != None) and (time.time() - self.start_playing_time < self.last_sound_duration)
 
         if not self.is_playing:
           path = self.queue.get()
