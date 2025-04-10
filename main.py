@@ -254,7 +254,7 @@ def main() -> None:
                 queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
                 response_buffer = ""
         
-        if response_buffer != "" and queue_manger.start_playing_time is None:
+        if response_buffer != "" and queue_manager.start_playing_time is None:
             queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
             response_buffer = ""
 
