@@ -195,8 +195,11 @@ def main() -> None:
     sys.stdout.write("=====================================================\n")
 
     # llm = setup_gemini_api()
-    # llm = setup_gemini_api(system_instruction="Be the user's best friend. Use casual language. Escalate the conversation by inviting the user to talk about some random topic. Talk as if you're talking by mouth, so don't say anything too long, keep each turn under three sentences.", max_output_tokens=128, temperature=0.2)
-    llm = setup_gemini_api(system_instruction="You are a robot made as a main character in a game developed for people who wants to start coding. Your name is Karel. Help the user in any task. Be sure to keep everything concise. Answer in the user's language.", max_output_tokens=128, temperature=0.2)
+    llm = setup_gemini_api(
+            system_instruction="Be the user's best friend. Use casual language. Escalate the conversation by inviting the user to talk about some random topic. Talk as if you're talking by mouth, so don't say anything too long, keep each turn under three sentences.", 
+            max_output_tokens=128, 
+            temperature=0.2
+    )
     queue_manager = queuedTTS()
 
     while True:
@@ -251,7 +254,7 @@ def main() -> None:
                 queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
                 response_buffer = ""
         
-        if response_buffer != "":
+        if response_buffer != "" and queue_manger.start_playing_time is None:
             queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
             response_buffer = ""
 
