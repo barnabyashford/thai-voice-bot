@@ -11,6 +11,19 @@ from gcp_asr_api import ResumableMicrophoneStream, get_current_time
 
 from queued_tts import QueuedTTS
 
+from google.cloud import speechfrom dotenv import load_dotenv
+load_dotenv()
+
+import os
+import re
+import shutil
+import sys
+import time
+
+from gcp_asr_api import ResumableMicrophoneStream, get_current_time
+
+from queued_tts import QueuedTTS
+
 from google.cloud import speech
 from google import genai
 from google.genai import types
@@ -213,8 +226,8 @@ def main() -> None:
         "ja-JP" : "君はユーザーの親友であり、今からユーザーと音声会話を行うから、返答は二文以内にしてほしい。ユーザーに話しかけることを忘れないで。"
         }
 
-    BARGE_IN_ENABLED = True # Set False to enable barge-in feature.
-    STREAM_RESPONSE = False
+    BARGE_IN_ENABLED = False # Set True to enable barge-in feature. (Unstable, require a tuned ASR model and parameter tuning to work optimally)
+    STREAM_RESPONSE = False # Set True to enable streaming response. (Unstable)
 
     lang = "th-TH" # "th-TH" for Thai, "en-UK" for British English, "en-US" for American English, "de-DE" for standard German, and "ja-JP" for Japanese 
     prompt = prompt_dict[lang]
@@ -298,39 +311,40 @@ def main() -> None:
                         app_running = False
                         break
 
-            queue_manager.activate_queue()
+            if app_running:
+                queue_manager.activate_queue()
 
-            # Get a response from the AI model based on the user's transcript
-            print(f"{YELLOW}Thinking....{RESET}", end="\r")
-            
-            ai_response = get_ai_response(llm, transcript, STREAM_RESPONSE)
-            print(f"{MAGENTA}{REWRITE}Assistant\t: ", end="")
-            response_buffer = ""
-
-            if STREAM_RESPONSE:
-
-                for stream_chunk in ai_response:
-                    print(stream_chunk.text, end="", flush=True)
-                    response_buffer += stream_chunk.text
-                    if " " in response_buffer:
-                        splitted_str = response_buffer.split(" ")
-                        queue_manager.add_queue(splitted_str.pop(0), lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
-                        response_buffer = " ".join(splitted_str)
-            
-            else:
-                response_buffer = ai_response.text
-                print(response_buffer, end="")
-            
-            if response_buffer != "":
-                queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
+                # Get a response from the AI model based on the user's transcript
+                print(f"{YELLOW}Thinking....{RESET}", end="\r")
+                
+                ai_response = get_ai_response(llm, transcript, STREAM_RESPONSE)
+                print(f"{MAGENTA}{REWRITE}Assistant\t: ", end="")
                 response_buffer = ""
 
-            print(RESET)
+                if STREAM_RESPONSE:
 
-            if not BARGE_IN_ENABLED:
-                sd.wait()
+                    for stream_chunk in ai_response:
+                        print(stream_chunk.text, end="", flush=True)
+                        response_buffer += stream_chunk.text
+                        if " " in response_buffer:
+                            splitted_str = response_buffer.split(" ")
+                            queue_manager.add_queue(splitted_str.pop(0), lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
+                            response_buffer = " ".join(splitted_str)
+                
+                else:
+                    response_buffer = ai_response.text
+                    print(response_buffer, end="")
+                
+                if response_buffer != "":
+                    queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
+                    response_buffer = ""
 
-            queue_manager.deactivate_queue()
+                print(RESET)
+
+                if not BARGE_IN_ENABLED:
+                    sd.wait()
+
+                queue_manager.deactivate_queue()
 
         elif (queue_manager.start_playing_time is not None) and (time.time() - queue_manager.start_playing_time < queue_manager.last_sound_duration) and BARGE_IN_ENABLED:
             print(f"{BLUE}\n###LISTENING FOR BARGE-IN###{RESET}", end="\r", flush=True)
@@ -371,6 +385,8 @@ def main() -> None:
                         break
 
             queue_manager.deactivate_queue()
+
+    queue_manager.clear_queue()
 
 if __name__ == "__main__":
     main()
