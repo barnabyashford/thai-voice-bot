@@ -1,21 +1,23 @@
 from gtts import gTTS
 from mutagen.mp3 import MP3
 import os
-from playsound import playsound
+import sounddevice as sd
+import soundfile as sf
 from pythainlp.util import normalize
 import queue
 import shutil
 import time
 import uuid
 
-class queuedTTS:
+class QueuedTTS:
   def __init__(self, save_dir:str="temp_speech"):
     self.queue : queue.Queue = queue.Queue()
     self.save_dir : str = save_dir
     self.is_active : bool = False
     self.is_playing : bool = False
-    self.start_playing_time : float = None
-    self.last_sound_duration : float = None
+    self.start_playing_time : float | None = None
+    self.last_sound_duration : float | None = None
+    self.speaking_text : str | None = None
 
   def add_queue(self, text:str, lang:str="th", top_level_domain:str="com", save_dir:str=None):
     if not save_dir:
@@ -28,7 +30,7 @@ class queuedTTS:
     tts = gTTS(text=normalize(text.replace("*", "")), lang=lang, tld=top_level_domain)
     tts.save(os.path.join(save_dir, tempfile_name))
 
-    self.queue.put(tempfile_name)
+    self.queue.put((tempfile_name, text))
 
     if self.is_active:
       self.play()
@@ -41,7 +43,11 @@ class queuedTTS:
       speech_path = os.path.join(save_dir, speech_path)
 
       duration = MP3(speech_path).info.length
-      playsound(speech_path, block=False)
+
+      data, fs = sf.read(speech_path, dtype='float32')
+      sd.play(data, fs)
+      # sd.wait()
+
       os.remove(speech_path)
 
       return duration
@@ -59,10 +65,11 @@ class queuedTTS:
 
       while self.queue.qsize() > 0:
 
-        self.is_playing = (self.start_playing_time != None) and (time.time() - self.start_playing_time < self.last_sound_duration)
+        self.is_playing = (self.start_playing_time is not None) and (time.time() - self.start_playing_time < self.last_sound_duration)
 
         if not self.is_playing:
-          path = self.queue.get()
+          path, text = self.queue.get()
+          self.speaking_text = text
           self.last_sound_duration = self.speak(path)
           self.start_playing_time = time.time()
       
@@ -72,11 +79,20 @@ class queuedTTS:
     else:
       raise Exception("Queue is not activated")
 
+  def clear_queue(self):
+    self.queue.queue.clear()
+    self.start_playing_time = None
+    self.last_sound_duration = None
+    self.speaking_text = None
+    self.is_playing = False
+
+    shutil.rmtree(self.save_dir)
+
 if __name__ == "__main__":
   
   test = ["สวัสดีชาวไทย", "เรามาทำอะไรกันที่นี่", "ฉันชื่ออะไร", "คุณชื่ออะไร", "ไม่มีใครรู้"]
   
-  queue_manager = queuedTTS()
+  queue_manager = QueuedTTS()
 
   queue_manager.activate_queue()
 
