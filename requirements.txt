@@ -1,12 +1,10 @@
 # Python 3.12.6
-attacut==1.0.6
 dotenv==0.9.9
 google-cloud-speech==2.31.0
+google-cloud-texttospeech==2.26.0
 google-genai==1.4.0
-gtts==2.5.4
 mutagen==1.47.0
 pyaudio==0.2.14
-pythainlp==5.1.0
 python-Levenshtein==0.27.1
 sounddevice==0.5.1
 soundfile==0.13.1
