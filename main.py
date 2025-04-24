@@ -3,21 +3,6 @@ load_dotenv()
 
 import os
 import re
-import shutil
-import sys
-import time
-
-from gcp_asr_api import ResumableMicrophoneStream, get_current_time
-
-from queued_tts import QueuedTTS
-
-from google.cloud import speechfrom dotenv import load_dotenv
-load_dotenv()
-
-import os
-import re
-import shutil
-import sys
 import time
 
 from gcp_asr_api import ResumableMicrophoneStream, get_current_time
@@ -220,16 +205,17 @@ def main() -> None:
 
     prompt_dict = {
         "th-TH" : "ทำตัวเป็นเพื่อนสนิทของผู้ใช้ การสนทนานี้เป็นการคุยกันด้วยเสียง ฉะนั้นตอบไม่เกินสองประโยค ชวนผู้ใช้คุยด้วยตนเอง",
-        "en-US" : "You are the user's best friend. This is a communication by voice, so please keep your answers to no more than two sentences. Engage the user in conversation.",
-        "en-UK" : "You are the user's best friend. This is a communication by voice, so please keep your answers to no more than two sentences. Engage the user in conversation.",
+        "en-US" : "You are the user's best friend. This is a communication by voice, so please keep your answers to no more than two sentences. Engage the user in conversation. Use American English.",
+        "en-UK" : "You are the user's best friend. This is a communication by voice, so please keep your answers to no more than two sentences. Engage the user in conversation. Use British English.",
         "de-DE" : "Verhalte dich wie ein enger Freund des Benutzers. Bitte lass dich maximal bis zwei Sätzen per eine Antwort. Fängst du bitte den Gespräch mit dem Benutzer an.",
+        "fr-FR" : "Tu es le meilleur ami de l'utilisateur. Cette conversation se fait par la voix, donc garde tes réponses à deux phrases maximum. Engage la conversation avec l'utilisateur.",
         "ja-JP" : "君はユーザーの親友であり、今からユーザーと音声会話を行うから、返答は二文以内にしてほしい。ユーザーに話しかけることを忘れないで。"
         }
 
     BARGE_IN_ENABLED = False # Set True to enable barge-in feature. (Unstable, require a tuned ASR model and parameter tuning to work optimally)
     STREAM_RESPONSE = False # Set True to enable streaming response. (Unstable)
 
-    lang = "th-TH" # "th-TH" for Thai, "en-UK" for British English, "en-US" for American English, "de-DE" for standard German, and "ja-JP" for Japanese 
+    lang = "th-TH" # "th-TH" for Thai, "en-UK" for British English, "en-US" for American English, "de-DE" for standard German, "fr-FR" for French and "ja-JP" for Japanese 
     prompt = prompt_dict[lang]
 
     print(f"{YELLOW}{REWRITE}Setting up.....{RESET}", end="\r")
@@ -246,18 +232,18 @@ def main() -> None:
         config=config, interim_results=True
     )
 
-    # user_prompt = input(f"{BLUE}Here's the default prompt for the LLM: {RESET}\n\n{WHITE}{prompt}\n\n{BLUE}You can write your own prompt here, or simply press [ENTER] to move on with the default prompt without typing anything.: {RESET}")
+    user_prompt = input(f"{BLUE}Here's the default prompt for the LLM: {RESET}\n\n{CYAN}{prompt}\n\n{BLUE}You can write your own prompt here, or simply press [ENTER] to move on with the default prompt without typing anything.: {RESET}")
 
-    # if user_prompt:
-    #     prompt = user_prompt
-    # else:
-    #     print(f"\n{YELLOW}Using default prompt...{RESET}")
+    if user_prompt:
+        prompt = user_prompt
+    else:
+        print(f"\n{YELLOW}Using default prompt...{RESET}")
 
-    # user_choice = input(f"{BLUE}Start voice conversation? (y/n): {RESET}").lower()
+    user_choice = input(f"{BLUE}Start voice conversation? (y/n): {RESET}").lower()
     
-    # if user_choice not in ('y', 'yes'):
-    #     print(f"{BLUE}Exiting Voice Bot. Goodbye!{RESET}")
-    #     return
+    if user_choice not in ('y', 'yes'):
+        print(f"{BLUE}Exiting Voice Bot. Goodbye!{RESET}")
+        return
     
     print(f'{YELLOW}Listening... (Say "exit" or "หยุดการทำงาน" to end the conversation){RESET}', end='\n\n')
     print(f"{BLUE}ROLE :            Transcript Results/Status")
@@ -291,16 +277,6 @@ def main() -> None:
                     # Now, put the transcription responses to use.
                     transcript = conversation_loop(responses, user_listen_stream, queue_manager, mode="listen")
 
-                    # if user_listen_stream.result_end_time > 0:
-                    #     user_listen_stream.final_request_end_time = user_listen_stream.is_final_end_time
-                    # user_listen_stream.result_end_time = 0
-                    # user_listen_stream.last_audio_input = []
-                    # user_listen_stream.last_audio_input = user_listen_stream.audio_input
-                    # user_listen_stream.audio_input = []
-                    # user_listen_stream.restart_counter = user_listen_stream.restart_counter + 1
-
-                    # if not user_listen_stream.last_transcript_was_final:
-                    #     print("\n", end="")
                     user_listen_stream.new_stream = True
 
                     # Exit recognition if any of the transcribed phrases could be
@@ -316,6 +292,7 @@ def main() -> None:
 
                 # Get a response from the AI model based on the user's transcript
                 print(f"{YELLOW}Thinking....{RESET}", end="\r")
+                start_response_time = time.time()
                 
                 ai_response = get_ai_response(llm, transcript, STREAM_RESPONSE)
                 print(f"{MAGENTA}{REWRITE}Assistant\t: ", end="")
@@ -328,7 +305,7 @@ def main() -> None:
                         response_buffer += stream_chunk.text
                         if " " in response_buffer:
                             splitted_str = response_buffer.split(" ")
-                            queue_manager.add_queue(splitted_str.pop(0), lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
+                            queue_manager.add_queue(splitted_str.pop(0), lang=lang if lang != "en-UK" else "en-GB")
                             response_buffer = " ".join(splitted_str)
                 
                 else:
@@ -336,13 +313,17 @@ def main() -> None:
                     print(response_buffer, end="")
                 
                 if response_buffer != "":
-                    queue_manager.add_queue(response_buffer, lang=lang[:2], top_level_domain="co.uk" if lang[3:].upper() == "UK" else "com")
+                    queue_manager.add_queue(response_buffer, lang=lang if lang != "en-UK" else "en-GB")
                     response_buffer = ""
 
                 print(RESET)
+                finished_generation_time = time.time()
 
                 if not BARGE_IN_ENABLED:
                     sd.wait()
+                
+                finished_response_time = time.time()
+                print(f"{YELLOW}Response generation time: {finished_generation_time - start_response_time:.2f} seconds and Speech synthesis time: {queue_manager.synthesis_duration:.2f}{RESET}")
 
                 queue_manager.deactivate_queue()
 
@@ -364,16 +345,6 @@ def main() -> None:
                     # Now, put the transcription responses to use.
                     user_barge_in = conversation_loop(responses, user_listen_stream, queue_manager, mode="speak")
 
-                    # if response_playing_stream.result_end_time > 0:
-                    #     response_playing_stream.final_request_end_time = response_playing_stream.is_final_end_time
-                    # response_playing_stream.result_end_time = 0
-                    # response_playing_stream.last_audio_input = []
-                    # response_playing_stream.last_audio_input = response_playing_stream.audio_input
-                    # response_playing_stream.audio_input = []
-                    # response_playing_stream.restart_counter = response_playing_stream.restart_counter + 1
-
-                    # if not response_playing_stream.last_transcript_was_final:
-                    #     print("\n", end="")
                     if user_barge_in:
                         response_playing_stream.closed = True
                         queue_manager.clear_queue()
