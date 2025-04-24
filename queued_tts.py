@@ -1,13 +1,21 @@
-from gtts import gTTS
+from dotenv import load_dotenv
+load_dotenv()
+
 from mutagen.mp3 import MP3
 import os
 import sounddevice as sd
 import soundfile as sf
-from pythainlp.util import normalize
 import queue
 import shutil
 import time
 import uuid
+
+from google.cloud import texttospeech
+
+client = texttospeech.TextToSpeechClient()
+audio_config = texttospeech.AudioConfig(
+    audio_encoding=texttospeech.AudioEncoding.MP3
+)
 
 class QueuedTTS:
   def __init__(self, save_dir:str="temp_speech"):
@@ -18,19 +26,38 @@ class QueuedTTS:
     self.start_playing_time : float | None = None
     self.last_sound_duration : float | None = None
     self.speaking_text : str | None = None
+    self.synthesis_duration : float | None = None
 
-  def add_queue(self, text:str, lang:str="th", top_level_domain:str="com", save_dir:str=None):
+  def add_queue(self, text:str, lang:str="th", save_dir:str=None):
     if not save_dir:
       save_dir = self.save_dir
+
+    synthesis_start_time = time.time()
 
     os.makedirs(save_dir, exist_ok=True)
     
     tempfile_name = f"{uuid.uuid4()}.mp3"
 
-    tts = gTTS(text=normalize(text.replace("*", "")), lang=lang, tld=top_level_domain)
-    tts.save(os.path.join(save_dir, tempfile_name))
+    voice = texttospeech.VoiceSelectionParams(
+        language_code=lang,
+        name=f"{lang}-Chirp3-HD-Orus",
+    )
 
-    self.queue.put((tempfile_name, text))
+    input_text = texttospeech.SynthesisInput(text=text)
+
+    # Perform the text-to-speech request
+    response = client.synthesize_speech(
+        request={"input": input_text, "voice": voice, "audio_config": audio_config}
+    )
+
+    # Write the response audio content to a file
+    with open(os.path.join(save_dir, tempfile_name), "wb") as out:
+        out.write(response.audio_content)
+
+    synthesis_end_time = time.time()
+    synthesis_duration = synthesis_end_time - synthesis_start_time
+
+    self.queue.put((tempfile_name, text, synthesis_duration))
 
     if self.is_active:
       self.play()
@@ -46,7 +73,6 @@ class QueuedTTS:
 
       data, fs = sf.read(speech_path, dtype='float32')
       sd.play(data, fs)
-      # sd.wait()
 
       os.remove(speech_path)
 
@@ -68,13 +94,11 @@ class QueuedTTS:
         self.is_playing = (self.start_playing_time is not None) and (time.time() - self.start_playing_time < self.last_sound_duration)
 
         if not self.is_playing:
-          path, text = self.queue.get()
+          path, text, synthesis_duration = self.queue.get()
+          self.synthesis_duration = synthesis_duration
           self.speaking_text = text
           self.last_sound_duration = self.speak(path)
           self.start_playing_time = time.time()
-      
-      # if self.queue.qsize() == 0:
-        # shutil.rmtree(self.save_dir)
     
     else:
       raise Exception("Queue is not activated")
@@ -100,3 +124,5 @@ if __name__ == "__main__":
     queue_manager.add_queue(text)
   
   # queue_manager.play()
+
+  queue_manager.deactivate_queue()
