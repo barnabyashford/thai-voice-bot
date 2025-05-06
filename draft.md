@@ -1,7 +1,9 @@
 # Leveraging LLM in developing “Virtual Friend” for Idle Conversation
 
 Worrapat Cheng  
-> Language and Information Technology Major, Faculty of Arts, Chulalongkorn University
+> Language and Information Technology Major,  
+> Faculty of Arts,  
+> Chulalongkorn University
 
 ## Abstract
 
@@ -15,9 +17,11 @@ Since the advent of Large Language Models (LLM), many efforts have been made to 
 
 ### Speech Recognizer
 
-
+"Speech recognizer" refers to a program, an agent, or an artificial intelligence technology that is designed to the task of speech recognition, **automatically** and accordingly transcribe into text the input speech audio. Hence also being known as **Automatic Speech Recognition** (ASR) model.
 
 ### Large Language Model
+
+Pragmatically refers to any transformers-based autoregressive language model that is trained on a tremendous amount of natural language data, resulting in a language model with the number of parameter as high as billions or even trillions. Known widely for their capability to preduce language with fluency adjacent to that of human's.
 
 ### Speech Synthesizer
 
