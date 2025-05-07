@@ -27,17 +27,16 @@ Pragmatically refers to any transformers-based autoregressive language model tha
 
 Also known as Text-to-Speech model, both terminologies overlaps in referent of an artificial intelligent model designed and tasked to take text input in order to "synthesize" a corresponding speech audio. 
 
-## Objective 
+## Problem Definition 
 
 LLMs are trained on textual data hence their proficiency in generating and understanding natural language in the form of text. That is, however, not the focus of this project, which is rather "speech". To address to this, this project carries on with these objectives. First, to find a solution to developing an application that implements LLM as the response generator while allowing input as speech and output as the same, extending the possibility of practical LLM implementation beyond text. Secondly and finally, test and evaluate the usability of the application developed under the solution.
 
-## Architecture
+## Application Architecture
+The architecture design stages of this project can be divided into two major states; the manual I/O stage and the push and converse stage. Both stages relates to each other chronologically, as the latter derives from the prior, as the objevtively superior design in user experience and latency.
 
-The architecture design stages of this project can be divided into two major states; the manual recording and playing stage
+### The Manual Input/Output Design
 
-### Initial Design
-
-
+This design was developed as a intuitive initial flow of the application. As the name suggests, the flow of this design involves the user manually pressing a button to start recording and repeat the action to stop recording, the application will then invoke a POST method to utilize an ASR model API in order to receive a 
 
 ### Changes in the flow
 
