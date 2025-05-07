@@ -33,7 +33,7 @@ LLMs are trained on textual data hence their proficiency in generating and under
 
 ## Architecture
 
-The architecture design stages of this project can be divided into two major states; the 
+The architecture design stages of this project can be divided into two major states; the manual recording and playing stage
 
 ### Initial Design
 
