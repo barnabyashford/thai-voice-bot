@@ -48,7 +48,7 @@ To minimize the number of required user interaction for the sake of user experie
 
 ## Implementation
 
-With a design established
+With a design established, the implementation follows to as a proof of concept (POC) to valiadate the idea. In creating POC of the design, we
 
 ## Testing \& Evaluation
 
