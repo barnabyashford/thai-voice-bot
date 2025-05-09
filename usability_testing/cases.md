@@ -104,7 +104,7 @@ Response generation time: 3.73 seconds and Speech synthesis time: 1.47
 | 15.28 | 10.83 |
 | 3.73 | 1.47 |
 
-## Case 2: Finding Places to Dine
+## Case 2: Casual Conversation with a Purpose
 
 ### Instruction
 
@@ -193,30 +193,3 @@ Response generation time: 3.89 seconds and Speech synthesis time: 1.13
 | 4.81 | 2.60 |
 | 4.37 | 1.51 |
 | 3.89 | 1.13 |
-
-<!--
-
-## Case 3: Favorite Movie Discussion
-
-### Instruction
-
-คุณอยากเม้าเรื่องหนังที่ชอบ แต่ตอนนี้เพื่อนๆ ไม่ว่างคุยด้วย คุณจึงเม้ากับแชทบอทแทน เม้าหรือถกเถียงประเด็นต่างๆ เกี่ยวกับภาพยนตร์ที่ชอบ
-
-### Output Log (copied from application output)
-
-```plaintext
-
-```
-
-### Note
-
--  turns in total
-
-- incorrect transcription: 
-
-  - User said `` but was transcribed as ``
-
-| Response generation time | Speech synthesis time |
-| --- | --- |
-
--->
