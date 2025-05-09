@@ -28,7 +28,7 @@ class QueuedTTS:
     self.speaking_text : str | None = None
     self.synthesis_duration : float | None = None
 
-  def add_queue(self, text:str, lang:str="th", save_dir:str=None):
+  def add_queue(self, text:str, lang:str="th-TH", save_dir:str=None):
     if not save_dir:
       save_dir = self.save_dir
 
@@ -124,5 +124,7 @@ if __name__ == "__main__":
     queue_manager.add_queue(text)
   
   # queue_manager.play()
+
+  sd.wait()
 
   queue_manager.deactivate_queue()
