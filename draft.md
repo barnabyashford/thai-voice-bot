@@ -146,7 +146,7 @@ On the data with outlier excluded with 32 turns of three conversations, 8 turns 
 | Median | 3.95 | 1.76 |
 | Standard Deviation | 0.56 | 0.45 |
 
-> Table 3 overall statistics of the data with outlier included
+> Table 3 overall statistics of the data with outlier excluded
 
 | Case Number | Response generation time | Speech synthesis time |
 | --- | --- | --- |
@@ -167,7 +167,7 @@ On the data with outlier excluded with 32 turns of three conversations, 8 turns 
 | 2 | 0.67 | 0.51 |
 | 3 | 0.43 | 0.37 |
 
-> Table 4 statistics of the data with outlier included grouped by case
+> Table 4 statistics of the data with outlier excluded grouped by case
 
 ## Discussion
 
@@ -199,7 +199,7 @@ Additionally, the application flow did not capture and imitate one attribute of 
 
 ### Future works
 
-With pros and cons of the project discussed, to wrap up this section, this subsection discusses potential future research and development. For each component of the model, as stated earlier, could be fine-tuned to work better with Thai language, or be changed entirely with a more fitting models. This does not limit to replacing each component with better ones, but the entire application could be made an end-to-end model sole for voice conversation. Moreover, streaming feature for response from each component should not be limited to only speech recognizer, but for text response generation and speech synthesis as well to minimize latency even further. Finally, more research should be done to enable barge-in feature to further imitate real human speech conversation.
+With pros and cons of the project discussed, to wrap up this section, this subsection discusses potential future research and development. For each component of the model, as stated earlier, could be fine-tuned to work better with Thai language, or be changed entirely with a more fitting models. This does not limit to replacing each component with better ones, but the entire application could be made an end-to-end model solely for voice conversation. Moreover, streaming feature for response from each component should not be limited to only speech recognizer, but for text response generation and speech synthesis as well to minimize latency even further. Finally, more research should be done to enable barge-in feature to further imitate real human speech conversation.
 
 ## Conclusion
 
