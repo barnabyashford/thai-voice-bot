@@ -2,7 +2,7 @@
 
 # Thai Voice-based Virtual Friend
 
-A voice bot application developed as a part of **2209492 Project in Language Technology II** course of the Faculty of Arts, Chulalongkorn University. This application allows you to have a friendly and casual conversation on plethora of topics. The "Bot" acts as your best friends who is always down to keep you occupied, or better yet, help you with decisions where you simply need a second opinion.
+A voice bot application developed as a part of a senior project "Leveraging LLM in developing “Virtual Friend” for Idle Conversation" for the **2209492 Project in Language Technology II** course of the Faculty of Arts, Chulalongkorn University. This application allows you to have a friendly and casual conversation on plethora of topics. The "Bot" acts as your best friends who is always down to keep you occupied, or better yet, help you with decisions where you simply need a second opinion.
 
 ## Getting Started
 
